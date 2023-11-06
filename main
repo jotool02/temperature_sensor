@@ -1,0 +1,132 @@
+from machine import ADC, Pin, PWM, I2C
+from time import sleep
+import math
+import time, struct
+import uasyncio as asyncio
+import array
+import network
+import ubinascii
+import urequests as requests
+
+#Connect the pico to wifi
+station = network.WLAN(network.STA_IF)
+station.active(True)
+
+mac = ubinascii.hexlify(network.WLAN().config('mac'),':').decode()
+print(mac)
+
+ssid = 'Tufts_Wireless'
+password = ''
+
+station.connect(ssid, password)
+while station.isconnected() == False:
+    time.sleep(1)
+    pass
+print('Connection successful')
+print(station.ifconfig())
+
+#Adafruit information
+url = 'https://io.adafruit.com/api/v2/%s/feeds' % 'jotool02'
+key = 'aio_uOcI38Ij834ie7FStxrBv19x3hM6'
+headers = {'X-AIO-Key':key,'Content-Type':'application/json'}
+reply = requests.get(url,headers=headers)
+if reply.status_code == 200:
+    reply = reply.json() #a JSON array of info
+    keys = [x['key'] for x in reply]
+    groups = [x['group']['name'] for x in reply]
+    names = [x['name'] for x in reply]
+    values = [x['last_value'] for x in reply]
+    ids = [x['id'] for x in reply]
+
+#Create URLs that will be used to post accelerometer readings to
+print(names)
+FEED_KEY = 'temperature'
+url = 'https://io.adafruit.com/api/v2/%s/feeds/%s/data' % ('jotool02', FEED_KEY)
+#FEED_KEY2 = 'opencv'
+#url2 = 'https://io.adafruit.com/api/v2/%s/feeds/%s/data' % ('jotool02', FEED_KEY2)
+
+
+
+adcpin = 26
+thermistor = ADC(adcpin)
+
+# Voltage Divider
+Vin = 3.3
+Ro = 12000  # 10k Resistor
+
+# Steinhart Constants
+A = 0.001129148
+B = 0.000234125
+C = 0.0000000876741
+
+tempC_arr = array.array('i', [0, 0])
+tempF_arr = array.array('i', [0, 0])
+
+wheel_servo = PWM(Pin(15))
+
+wheel_servo.freq(50)
+duty = 1200
+
+def set_all_servos(x):
+    PWM(Pin(15)).duty_u16(x)
+
+def sControl(cent):
+    return int((float(cent) / 100) * 1800 + 4800)
+
+while True:
+    # Get Voltage value from ADC
+    adc = thermistor.read_u16()
+    Vout = (3.3/65535)*adc
+    #print(Vout)
+    
+    # Calculate Resistance
+    Rt = (Vout * Ro) / (Vin - Vout)
+    #Rt = 10000  # Used for Testing. Setting Rt=10k should give TempC=25
+
+    # Steinhart - Hart Equation
+    TempK = 1 / (A + (B * math.log(Rt)) + C * math.pow(math.log(Rt), 3))
+
+    # Convert from Kelvin to Celsius
+    TempC = TempK - 273.15
+
+    TempF = TempC*9/5 + 32
+    
+    tempC_arr[1] = tempC_arr[0]
+    tempC_arr[0] = int(TempC)
+    print(tempC_arr)
+    
+    print(round(TempC, 1))
+    print(round(TempF, 1))
+    
+    data = {'value':round(TempF, 1)}
+    #data2 = {'value':VALUE2}
+    try:
+        reply = requests.post(url,headers=headers,json=data)
+    finally:
+        reply.close()
+    #try:
+    #    reply = requests.post(url2,headers=headers,json=data2)  #Use reply.close() to save RAM
+    #finally:
+    #    reply.close()
+    time.sleep(1)
+    
+    if tempC_arr[1] < tempC_arr[0]:
+        temp_diff_of_360_deg = (tempC_arr[1]-tempC_arr[0]) / 140
+        d = temp_diff_of_360_deg*60
+        for i in range(0, 1, 1):
+            wheel_servo.duty_u16(sControl(d))
+            print("Temperature increasing")
+            time.sleep(1)
+            set_all_servos(0)
+    elif tempC_arr[1] > tempC_arr[0]:
+        temp_diff_of_360_deg = (tempC_arr[1]-tempC_arr[0]) / 140
+        d = temp_diff_of_360_deg*60
+        for i in range(0, 1, 1):
+            wheel_servo.duty_u16(sControl(d))
+            print("Temperature decreasing")
+            time.sleep(1)
+            set_all_servos(0)
+    else:
+        set_all_servos(0)
+    
+    sleep(5)
