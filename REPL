@@ -1,0 +1,36 @@
+cv2_image = cv2.cvtColor(np.array(cam.raw_image), cv2.COLOR_RGB2BGR)
+b,g,r = cv2.split(cv2_image)
+
+color = ('b','g','r')
+for i,col in enumerate(color):
+    histr = cv2.calcHist([cv2_image],[i],None,[256],[0,256])
+    plt.plot(histr,color = col)  # add the different histograms to the plot
+    plt.xlim([0,256])  # define x axis length (cuts off some of the picture)
+
+red = cv2.subtract(r,g)
+cam.show(red)  # shows any cv2 image in the same spot on the webpage (third image)
+image3 = Image.fromarray(red)
+blurred = cv2.GaussianBlur(red, (5, 5), 0)
+thresh = cv2.threshold(blurred, 25, 255, cv2.THRESH_BINARY)[1]
+cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+cam.show(thresh)
+
+import asyncio 
+
+s.write('from machine import Pin')
+s.write('led = Pin("LED", Pin.OUT)')
+
+async def go():
+    for i in range(100):
+        x = cam.snap()
+        await asyncio.sleep(0)
+        s.write('led.toggle()')
+        s.write(str(x))
+
+def main():
+    asyncio.create_task(go())
+
+main()
+
+plt.imshow(r)  # puts red image in the background
+display(plt)  #shows it
